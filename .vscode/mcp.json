@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "database-server": {
+      "command": "${workspaceFolder}/databases-mcp-server",
+      "args": [],
+      "envFile": "${workspaceFolder}/.env"
+    }
+  }
+}
