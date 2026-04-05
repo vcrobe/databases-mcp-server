@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -33,7 +34,17 @@ func HandleListAllDatabases(ctx context.Context, req *mcp.CallToolRequest, input
 		return newErrorResult(err), ListAllDatabasesOutput{}, nil
 	}
 
-	rows, err := db.QueryContext(ctx, "SHOW DATABASES")
+	config, err := app.getServerConfig(input.ServerName)
+	if err != nil {
+		return newErrorResult(err), ListAllDatabasesOutput{}, nil
+	}
+
+	query := "SHOW DATABASES"
+	if config.Engine == "postgres" {
+		query = "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname"
+	}
+
+	rows, err := db.QueryContext(ctx, query)
 
 	if err != nil {
 		logger.Printf("List databases query failed: %v\n", err)
@@ -50,6 +61,14 @@ func HandleListAllDatabases(ctx context.Context, req *mcp.CallToolRequest, input
 		}
 		databases = append(databases, databaseName)
 	}
+
+	if err := rows.Err(); err != nil {
+		logger.Printf("Rows iteration failed: %v\n", err)
+		return newErrorResult(err), ListAllDatabasesOutput{}, nil
+	}
+
+	// MySQL does not guarantee ordering for SHOW DATABASES.
+	sort.Strings(databases)
 
 	output := ListAllDatabasesOutput{Databases: databases}
 

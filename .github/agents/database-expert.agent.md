@@ -1,5 +1,5 @@
 ---
-name: mysql-expert
+name: database-expert
 description: A Senior Database Administrator specializing in MySQL performance and safety.
 tools:
   ['database-server/*']

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -50,7 +51,9 @@ func main() {
 
 	// Read database server configurations from environment variables and open
 	// a pooled connection for every configured server.
-	readDatabaseServersConfig()
+	if err := readDatabaseServersConfig(); err != nil {
+		logger.Fatalf("invalid database configuration: %v", err)
+	}
 	app.initPool(ctx)
 
 	// Call the centralized registry
@@ -145,7 +148,7 @@ func createAgentServer() (*AgentServer, *os.File) {
 	}
 
 	// Create a custom logger that writes exclusively to this file
-	logger = log.New(logFile, "[MCP-MySQL] ", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lmsgprefix)
+	logger = log.New(logFile, "[MCP-DB] ", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lmsgprefix)
 
 	return &AgentServer{
 		logger: logger,

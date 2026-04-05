@@ -13,7 +13,7 @@ import (
 type SelectQueryInput struct {
 	ServerName  string `json:"server_name" jsonschema:"The name of the database server to execute the query against."`
 	Explanation string `json:"explanation" jsonschema:"A brief, one-sentence explanation of why you are running this specific query, and what user question it answers. Failure to provide a clear reason will result in rejection."`
-	SQL         string `json:"sql" jsonschema:"The raw SQL SELECT statement to execute. MUST strictly be a read-only query. Do NOT pass INSERT, UPDATE, DELETE, or CREATE statements. Because no default database is selected, you MUST qualify all table references as database_name.table_name (e.g. SELECT * FROM mydb.users)."`
+	SQL         string `json:"sql" jsonschema:"The raw SQL SELECT statement to execute. MUST strictly be a read-only query. Do NOT pass INSERT, UPDATE, DELETE, or CREATE statements. Qualify table references for the target engine (MySQL: database_name.table_name, PostgreSQL: schema_name.table_name)."`
 }
 
 type SelectQueryOutput struct {

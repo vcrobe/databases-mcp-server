@@ -38,6 +38,25 @@ func (s *AgentServer) getConn(serverName string) (*sql.DB, error) {
 	return db, nil
 }
 
+func (s *AgentServer) getServerConfig(serverName string) (DatabaseServerConfig, error) {
+	config, ok := databaseServersConfig[serverName]
+	if !ok {
+		return DatabaseServerConfig{}, fmt.Errorf("no configuration for server %q: check server name and configuration", serverName)
+	}
+	return config, nil
+}
+
+func dsnForServer(config DatabaseServerConfig, port string) (driver string, dsn string, err error) {
+	switch config.Engine {
+	case "mysql":
+		return "mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/?parseTime=true", config.User, config.Password, config.Host, port), nil
+	case "postgres":
+		return "postgres", fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", config.Host, port, config.User, config.Password, config.Database), nil
+	default:
+		return "", "", fmt.Errorf("unsupported database engine %q", config.Engine)
+	}
+}
+
 // initPool opens and pings a connection for every server in databaseServersConfig.
 // Servers that cannot be reached at startup are skipped and logged.
 func (s *AgentServer) initPool(ctx context.Context) {
@@ -45,24 +64,24 @@ func (s *AgentServer) initPool(ctx context.Context) {
 	defer s.mu.Unlock()
 	s.pool = make(map[string]*sql.DB)
 	for serverName, config := range databaseServersConfig {
-		port := config.Port
-		if port == "" {
-			port = "3306"
-		}
-		// No database in DSN; queries must qualify table names as database.table.
-		dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/?parseTime=true", config.User, config.Password, config.Host, port)
-		db, err := sql.Open("mysql", dsn)
+		driver, dsn, err := dsnForServer(config, config.Port)
 		if err != nil {
-			s.logger.Printf("Failed to open connection for server %q: %v", serverName, err)
+			s.logger.Printf("Invalid server configuration %q: %v", serverName, err)
+			continue
+		}
+
+		db, err := sql.Open(driver, dsn)
+		if err != nil {
+			s.logger.Printf("Failed to open %s connection for server %q: %v", config.Engine, serverName, err)
 			continue
 		}
 		if err := db.PingContext(ctx); err != nil {
-			s.logger.Printf("Failed to ping server %q: %v — skipping", serverName, err)
+			s.logger.Printf("Failed to ping %s server %q: %v — skipping", config.Engine, serverName, err)
 			db.Close()
 			continue
 		}
 		s.pool[serverName] = db
-		s.logger.Printf("Connected to server %q (%s:%s)", serverName, config.Host, port)
+		s.logger.Printf("Connected to %s server %q (%s:%s)", config.Engine, serverName, config.Host, config.Port)
 	}
 }
 
@@ -80,17 +99,17 @@ func (s *AgentServer) RegisterTools(server *mcp.Server, logger *log.Logger) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "execute_select_query",
-		Description: "Executes a read-only SELECT statement against a specific server. USE THIS STRICTLY FOR FETCHING DATA. Do NOT use this tool for INSERT, UPDATE, DELETE, or schema modifications. Because no default database is selected, you MUST qualify all table references as database_name.table_name in your SQL (e.g. SELECT * FROM mydb.users). IMPORTANT: You MUST provide a clear explanation in the 'explanation' field detailing the user's intent before providing the SQL.",
+		Description: "Executes a read-only SELECT statement against a specific server. USE THIS STRICTLY FOR FETCHING DATA. Do NOT use this tool for INSERT, UPDATE, DELETE, or schema modifications. Qualify table references for the target engine (MySQL: database_name.table_name, PostgreSQL: schema_name.table_name). IMPORTANT: You MUST provide a clear explanation in the 'explanation' field detailing the user's intent before providing the SQL.",
 	}, HandleExecuteSelectQuery)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "inspect_single_table_schema",
-		Description: "Retrieves the CREATE TABLE DDL for ONE specific table. Use this to learn the exact column names and data types BEFORE writing a SELECT or INSERT query. You MUST know the exact table name and database name to use this.",
+		Description: "Retrieves the CREATE TABLE DDL for ONE specific table. Use this to learn the exact column names and data types BEFORE writing a SELECT or INSERT query. You MUST know the exact table name and namespace to use this (MySQL: database name, PostgreSQL: schema name).",
 	}, HandleInspectSingleTable)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "execute_write_statement",
-		Description: "Executes a raw SQL write operation (INSERT, UPDATE, CREATE, ALTER) against a specific server. USE THIS STRICTLY FOR MODIFYING DATA OR SCHEMA. Do NOT use this tool for fetching data; use execute_select_query instead. Because no default database is selected, you MUST qualify all table references as database_name.table_name in your SQL (e.g. INSERT INTO mydb.users ...). Always verify table schema first before inserting or updating. IMPORTANT: You MUST provide a clear explanation in the 'explanation' field detailing the user's intent before providing the SQL.",
+		Description: "Executes a raw SQL write operation (INSERT, UPDATE, CREATE, ALTER) against a specific server. USE THIS STRICTLY FOR MODIFYING DATA OR SCHEMA. Do NOT use this tool for fetching data; use execute_select_query instead. Qualify table references for the target engine (MySQL: database_name.table_name, PostgreSQL: schema_name.table_name). Always verify table schema first before inserting or updating. IMPORTANT: You MUST provide a clear explanation in the 'explanation' field detailing the user's intent before providing the SQL.",
 	}, HandleExecuteWriteStatement)
 }
 
